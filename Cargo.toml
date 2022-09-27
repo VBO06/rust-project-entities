@@ -22,3 +22,13 @@ reqwest = { version = "0.11", features = ["json"] }
 bincode = "1.3.3"
 serde_json = "1.0.85"
 tokio = { version = "1", features = ["full"] }
+
+
+[[bin]]
+name = "server"
+path = "src/server/main.rs"
+
+[[bin]]
+name = "main"
+path = "src/client/main.rs"
+
