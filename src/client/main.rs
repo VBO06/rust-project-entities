@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 use xml::reader::{EventReader, XmlEvent};
-use serde::de::Error;
 use serde_xml_rs::{from_str, to_string};
 use chrono::prelude::*;
 use chrono::DateTime;
@@ -10,27 +9,9 @@ use chrono::Utc;
 use std::fs::File;
 use std::*;
 use serde_with::*;
-use crate::oracle::oracle::connect;
-use rocket::post;
-
 use std::str;
-use std::net::TcpStream;
 use std::io::{self,prelude::*,BufReader,Write};
-
-use rocket::request::FlashMessage;
-use rocket::response::Redirect;
-use rocket_contrib::serve::StaticFiles;
-use std::collections::HashMap;
-//use rocket::Request;
-// use rocket::local::Client;
-use reqwest::Client;
-use serde_json::json;
 use tokio;
-
-mod oracleGSF;
-
-#[macro_use]
-extern crate serde_derive;
 extern crate serde;
 extern crate serde_with;
 extern crate serde_json;
@@ -39,11 +20,12 @@ extern crate chrono;
 extern crate rocket;
 extern crate rocket_contrib;
 
-use rocket::routes;
-
 // const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 const FORMAT: &str = "%Y-%m-%d";
-const ENTITE_NS: &str = "{http://www.XXX.fr/XXXXX/entite}";
+const ENTITE_NS: &str = "{http://www.gsf.fr/UNIVERS/entiteGSF}";
+
+const ACCEPT: &str = "Accept";
+const CONTENT_TYPE: &str = "Content-Type";
 
 #[serde_as]
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -60,10 +42,16 @@ struct Entite {
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[allow(non_snake_case)]
-#[serde(rename = "G1_XXXX_XXXX")]
-struct G1_XXXX_XXXX {
+#[serde(rename = "G1_1000")]
+struct G1_1000 {
     #[serde(rename = "Entite", default)]
     items: Vec<Entite>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct TEST {
+    user_id: i32,
+    name: String,
 }
 
 fn test_date_time_from_string<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
@@ -105,7 +93,7 @@ where
 }
 
 fn read_file() -> String {
-    let file = File::open("C:\\XXXX\\XXXX\\Entite_Rust.xml").unwrap();
+    let file = File::open("C:\\Users\\vboisnier_prestatair\\EntiteGSF_Rust.xml").unwrap();
     let file = BufReader::new(file);
 
     let parser = EventReader::new(file);
@@ -179,15 +167,34 @@ fn read_file() -> String {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let xml_str = read_file();
-    nested_collection(&xml_str);
+    let entites= nested_collection(&xml_str);
+
+    let handle = tokio::spawn(async move {
+        // Process each socket concurrently 
+        let client = reqwest::Client::new();
+        let client = client.clone();
+        let response = client.post("http:/172.20.0.36:9225/entites")
+        .header("Content-Type", "application/json")
+        .json(&entites)
+        .send()
+        .await.unwrap()
+        .json::<G1_1000>()
+        .await.unwrap();
+        
+        let s = serde_json::to_string(&response);
+        let v: G1_1000 = serde_json::from_str(&s.unwrap()).unwrap();
+        println!("Object receive from API : {:#?}", v);
+
+    });
+
+    handle.await?;
+
     Ok(())
 }
 
 
-async fn nested_collection(xml_str: &str) {
-    let entites: G1_XXXX_XXXX = from_str(xml_str).unwrap();
-
-    println!("Entites {:?}", entites);
+ fn nested_collection(xml_str: &str) -> G1_1000 {
+    let entites: G1_1000 = from_str(xml_str).unwrap();
 
     for ent in &entites.items {
         println!("Key {:?} Value : {:?}", ent.IdSource, ent.NomCommercial);
@@ -196,31 +203,9 @@ async fn nested_collection(xml_str: &str) {
     let entt:Vec<_> = entites.items.iter().filter(|entit| entit.NomCommercial.eq("Test")).collect();
     println!("entt :   {:?}", &entt);
 
-    match call_rest_api_entite(&entites).await {
-        Ok(()) => println!("Send ok "),
-        Err(e) => println!("Send not ok {:?} ", e),
-    }
+    return entites;
 
 }
 
-
-async fn call_rest_api_entite(entites: &G1_XXXX_XXXX) ->  Result<(), Box<dyn std::error::Error>> {
-    
-
-    let client = reqwest::Client::new();
-
-    let response = client.post("http://localhost:8000/entites")
-    .json(&entites)
-    .send()
-    .await?;
-
-    if response.status().is_success() {
-        println!("{:?}", &response);
-    } else {
-        println!("{:?}", &response);
-    }
-
-    Ok(())
-}
 
 
